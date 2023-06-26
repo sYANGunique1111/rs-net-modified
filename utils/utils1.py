@@ -83,6 +83,8 @@ def print_error(data_type,action_error_sum,show_protocol2=False,epoch=0,logger=N
         mean_error =  print_error_action(action_error_sum, show_protocol2,epoch,logger, lr)
     elif data_type.startswith('STB'):
         mean_error = print_error_directly(action_error_sum)
+    elif data_type == 'coco':
+        mean_error = 0
 
     return mean_error
 

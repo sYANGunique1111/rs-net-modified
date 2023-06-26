@@ -30,6 +30,8 @@ def test_calculation(predicted, target, action, error_sum, data_type, show_proto
 
     elif data_type.startswith('STB'):
         error_sum = mjmpe_directly(predicted, target, error_sum)
+    elif data_type =='coco':
+        error_sum = mjmpe_directly(predicted, target, error_sum)
 
     return error_sum
 
@@ -188,6 +190,13 @@ def sym_penalty(dataset,keypoints,pred_out):
             loss_sym += torch.mean(torch.norm(left_part, dim=- 1) - torch.norm(right_part, dim=- 1))
     elif dataset.startswith('STB'):
         loss_sym = 0
+    elif dataset == 'coco':
+        left_bone = [(0,1),(1,3),(5,7),(5,9),(9,11),(11,13),(13,15)]
+        right_bone = [(0,2),(2,4),(6,8),(6,10),(10,12),(12,14),(14,16)]
+        for (i_left,j_left),(i_right,j_right) in zip(left_bone,right_bone):
+            left_part = pred_out[:,:,i_left]-pred_out[:,:,j_left]
+            right_part = pred_out[:, :, i_right] - pred_out[:, :, j_right]
+            loss_sym += torch.mean(torch.norm(left_part, dim=- 1) - torch.norm(right_part, dim=- 1))
     return loss_sym
 
 def bone_length_penalty(dataset,keypoints,pred_out):
@@ -198,7 +207,7 @@ def bone_length_penalty(dataset,keypoints,pred_out):
     loss_bone = 0
     if pred_out.size(1) == 1:
         return 0
-    if dataset == 'h36m' and keypoints is not 'sh_ft_h36m':
+    if dataset == 'h36m' and keypoints != 'sh_ft_h36m':
         bone_id = [(0,4),(4,5),(5,6),(8,11),(11,12),(12,13),(0,1),(1,2),(2,3),(8,14),(14,15),(15,16)
             ,(0,7),(7,8),(8,9),(9,10)]
         for (i,j) in bone_id:

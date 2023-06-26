@@ -6,7 +6,7 @@ import torch
 
 
 
-def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch=0,logger=None, lr = 0):#, key_index=None
+def step(split, opt, dataLoader, model, criterion, optimizer=None,logger=None, lr = 0):#, key_index=None
 
     device = torch.device(opt.device)
     # initialize some definitions
@@ -16,32 +16,33 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
 
     mean_error = {'xyz': 0.0, 'post': 0.0}
     error_sum = AccumLoss()
+    test_error_sum = AccumLoss()
 
 
-    if opt.dataset=='h36m' and (opt.keypoints=='gt' or opt.keypoints=='hr'):
-        limb_center = [2, 5, 11, 14]
-        limb_terminal = [3, 6, 12, 15]
-        action_error_sum = define_error_list(actions)
+    # if opt.dataset=='h36m' and (opt.keypoints=='gt' or opt.keypoints=='hr'):
+    #     limb_center = [2, 5, 11, 14]
+    #     limb_terminal = [3, 6, 12, 15]
+    #     action_error_sum = define_error_list(actions)
 
-        action_error_sum_post_out = define_error_list(actions)
-        joints_left =[4, 5, 6, 10, 11, 12] 
-        joints_right = [1, 2, 3, 13, 14, 15]
-    elif opt.dataset == 'h36m':
-        limb_center = [2, 5, 11, 14] if opt.keypoints.startswith('sh') else [2, 5, 12, 15]
-        limb_terminal = [3, 6, 12, 15] if opt.keypoints.startswith('sh') else [3,6,13,16]
-        action_error_sum = define_error_list(actions)
+    #     action_error_sum_post_out = define_error_list(actions)
+    #     joints_left =[4, 5, 6, 10, 11, 12] 
+    #     joints_right = [1, 2, 3, 13, 14, 15]
+    # elif opt.dataset == 'h36m':
+    #     limb_center = [2, 5, 11, 14] if opt.keypoints.startswith('sh') else [2, 5, 12, 15]
+    #     limb_terminal = [3, 6, 12, 15] if opt.keypoints.startswith('sh') else [3,6,13,16]
+    #     action_error_sum = define_error_list(actions)
 
-        action_error_sum_post_out = define_error_list(actions)
-        joints_left =[4, 5, 6, 10, 11, 12]  if opt.keypoints.startswith('sh') else [4,5,6,11,12,13]
-        joints_right = [1, 2, 3, 13, 14, 15] if opt.keypoints.startswith('sh') else [1, 2, 3, 14, 15, 16]
-    elif opt.dataset == 'coco':
-        limb_center = [2, 5, 11, 14]
-        limb_terminal = [3, 6, 12, 15]
-        action_error_sum = define_error_list(actions)
+    #     action_error_sum_post_out = define_error_list(actions)
+    #     joints_left =[4, 5, 6, 10, 11, 12]  if opt.keypoints.startswith('sh') else [4,5,6,11,12,13]
+    #     joints_right = [1, 2, 3, 13, 14, 15] if opt.keypoints.startswith('sh') else [1, 2, 3, 14, 15, 16]
+    # elif opt.dataset == 'coco':
+    limb_center = [2, 5, 11, 14]
+    limb_terminal = [3, 6, 12, 15]
+    # action_error_sum = define_error_list(actions)
 
-        action_error_sum_post_out = define_error_list(actions)
-        joints_left =[4, 5, 6, 10, 11, 12] 
-        joints_right = [1, 2, 3, 13, 14, 15] 
+    # action_error_sum_post_out = define_error_list(actions)
+    joints_left =[1, 3, 5, 7, 9, 11, 13, 15] 
+    joints_right = [2, 4, 6, 8, 10, 12, 14, 16] 
 
     criterion_mse = criterion['MSE']
     #add sparsity constaint 
@@ -68,7 +69,6 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
     # load data
     for i, data in enumerate(tqdm(dataLoader, 0)):
 
-
         if split == 'train':
             if optimizer is None:
                 print("error! No Optimizer")
@@ -76,8 +76,10 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
                 optimizer_all = optimizer
 
         # load and process data
-        batch_cam, gt_3D, input_2D, action, subject, scale , bb_box, cam_ind = data
-        [input_2D, gt_3D, batch_cam, scale, bb_box] = get_varialbe (split,[input_2D, gt_3D, batch_cam, scale, bb_box])
+        # batch_cam, gt_3D, input_2D, action, subject, scale , bb_box, cam_ind = data
+        # [input_2D, gt_3D, batch_cam, scale, bb_box] = get_varialbe (split,[input_2D, gt_3D, batch_cam, scale, bb_box])
+        key_points_3d, key_points_2d, scale, action, bb_box = data
+        [input_2D, gt_3D, scale, bb_box] = get_varialbe (split,[key_points_2d, key_points_3d, scale, torch.tensor(bb_box)])
 
         N = input_2D.size(0)
         num_data_all += N
@@ -88,10 +90,8 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
 
         if out_target.size(1) > 1:
             out_target_single = out_target[:,opt.pad].unsqueeze(1)
-            gt_3D_single = gt_3D[:, opt.pad].unsqueeze(1)
         else:
             out_target_single = out_target
-            gt_3D_single = gt_3D
 
         # start forward process
         if opt.test_augmentation and split =='test':
@@ -121,8 +121,11 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
         else:
             pred_uv = input_2D
 
-        uvd = torch.cat((pred_uv[:, opt.pad, :, :].unsqueeze(1), output_3D_single[:, :, :, 2].unsqueeze(-1)), -1)
-        xyz = get_uvd2xyz(uvd, gt_3D_single, batch_cam)
+        # uvd = torch.cat((pred_uv[:, opt.pad, :, :].unsqueeze(1), output_3D_single[:, :, :, 2].unsqueeze(-1)), -1)
+        # xyz = get_uvd2xyz(uvd, gt_3D_single, batch_cam)
+        # xyz[:, :, 0, :] = 0
+        # xyz = torch.cat((pred_uv[:, opt.pad, :, :].unsqueeze(1), output_3D_single[:, :, :, 2].unsqueeze(-1)), -1)
+        xyz = torch.cat((pred_uv, output_3D_single[:, :, :, 2].unsqueeze(-1)), -1)
         xyz[:, :, 0, :] = 0
 
         if opt.post_refine:
@@ -142,9 +145,10 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
         if opt.pad == 0 or split == 'test':
             loss_diff = torch.zeros(1).to(device)
         else:
-            weight_diff = 4 * torch.ones(output_3D[:, :-1, :].size()).to(device)
+            weight_diff = 4 * torch.ones(output_3D[:, :-1, :].size())
             weight_diff[:, :, limb_center] = 2.5
             weight_diff[:, :, limb_terminal] = 1
+            weight_diff.to(device)
             diff = (output_3D[:,1:] - output_3D[:,:-1]) * weight_diff
             loss_diff = criterion_mse(diff, Variable(torch.zeros(diff.size()), requires_grad=False).to(device))
 
@@ -158,6 +162,7 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
 
 
         # train backpropogation
+        torch.autograd.set_detect_anomaly(True)
         if split == 'train':
             optimizer_all.zero_grad()
             loss.backward()
@@ -171,16 +176,21 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
 
 
         elif split == 'test':
-            #pred_out[:, :, 0, :] = 0  
-            pred_out[:, :, :, :] -= pred_out[:, :, :1, :]
-            action_error_sum = eval_cal.test_calculation(pred_out, out_target, action, action_error_sum,
-                                                         opt.dataset, show_protocol2=opt.show_protocol2)
-
-            if opt.post_refine:
-                #post_out[:, :, 0, :] = 0
-                post_out[:, :, :, :] -= post_out[:, :, :1, :]
-                action_error_sum_post_out = eval_cal.test_calculation(post_out, out_target, action, action_error_sum_post_out, opt.dataset,
-                                                             show_protocol2=opt.show_protocol2)
+            joint_error = eval_cal.mpjpe(pred_out,out_target).item()
+            test_error_sum.update(joint_error*N, N)
+            # pred_out[:, :, 0, :] = 0  
+            # pred_out[:, :, :, :] -= pred_out[:, :, :1, :]
+            # action_error_sum = eval_cal.test_calculation(pred_out, out_target, action, action_error_sum,
+            #                                              opt.dataset, show_protocol2=opt.show_protocol2)
+            # assert pred_out.shape == out_target.shape
+            # num = pred_out.size(0)
+            # dist = torch.mean(torch.norm(pred_out - out_target, dim=len(out_target.shape) - 1),dim=len(out_target.shape) - 2)
+            # mjpe = dist.sum() / num 
+            # if opt.post_refine:
+            #     #post_out[:, :, 0, :] = 0
+            #     post_out[:, :, :, :] -= post_out[:, :, :1, :]
+            #     action_error_sum_post_out = eval_cal.test_calculation(post_out, out_target, action, action_error_sum_post_out, opt.dataset,
+            #                                                  show_protocol2=opt.show_protocol2)
 
     if split == 'train':
         mean_error['xyz'] = error_sum.avg
@@ -190,24 +200,26 @@ def step(split, opt, actions, dataLoader, model, criterion, optimizer=None,epoch
         print('mean joint error: %f' % (mean_error['xyz']*1000))
 
     elif split == 'test':
-        if not opt.post_refine:
-            mean_error_all = print_error(opt.dataset, action_error_sum, opt.show_protocol2,epoch,logger,lr)
-            mean_error['xyz'] = mean_error_all
+        mean_error['xyz'] = test_error_sum.avg
+        print('mean joint error (test): %f' % (mean_error['xyz']*1000))
+        # if not opt.post_refine:
+        #     mean_error_all = print_error(opt.dataset, action_error_sum, opt.show_protocol2,epoch,logger,lr)
+        #     mean_error['xyz'] = mean_error_all
 
-        elif opt.post_refine:
-            print('-----post out')
-            mean_error_all = print_error(opt.dataset, action_error_sum_post_out,  opt.show_protocol2,epoch,logger, lr)
-            mean_error['post'] = mean_error_all
+        # elif opt.post_refine:
+        #     print('-----post out')
+        #     mean_error_all = print_error(opt.dataset, action_error_sum_post_out,  opt.show_protocol2,epoch,logger, lr)
+        #     mean_error['post'] = mean_error_all
 
     return mean_error
 
 
-def train(opt, actions,train_loader,model, criterion, optimizer, lr):
-    return step('train',  opt,actions, train_loader, model, criterion, optimizer, lr)
+def train(opt, train_loader,model, criterion, optimizer, lr):
+    return step('train',  opt, train_loader, model, criterion, optimizer=optimizer, lr=lr)
 
 
-def val( opt, actions,val_loader, model, criterion,epoch=0,logger=None, lr = 0):
-    return step('test',  opt,actions, val_loader, model, criterion,epoch=epoch,logger=logger, lr = lr)
+def val( opt, val_loader, model, criterion,logger=None, lr = 0):
+    return step('test',  opt, val_loader, model, criterion,logger=logger, lr = lr)
 
 def input_augmentation(input_2D, model_rsnet, joints_left, joints_right):
     """

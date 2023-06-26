@@ -56,3 +56,11 @@ def adj_mx_from_skeleton(skeleton):
     num_joints = skeleton.num_joints()
     edges = list(filter(lambda x: x[1] >= 0, zip(list(range(0, num_joints)), skeleton.parents())))
     return adj_mx_from_edges(num_joints, edges, sparse=False)
+
+
+if __name__ == '__main__':
+    joint_pairs = np.array([[1, 2], [3, 4], [5, 6], [7, 8],
+                        [9, 10], [11, 12], [13, 14], [15, 16]])
+    nodes_num = 17
+
+    print(adj_mx_from_edges(nodes_num, joint_pairs, sparse=True).shape)

@@ -11,6 +11,7 @@ import logging
 import pickle
 import torch
 import torch.utils.data
+from torch.utils.tensorboard import SummaryWriter
 import torch.nn as nn
 import sys
 import time
@@ -25,14 +26,17 @@ from utils.utils1 import save_model
 import torch.optim as optim
 from nets.post_refine import post_refine
 from train_graph_time import train, val
+from train_graph_time_coco import train as train_coco
+from train_graph_time_coco import val as val_coco
 from data.common.data_utils import read_3d_data
-from data.common.graph_utils import adj_mx_from_skeleton
+from data.common.graph_utils import adj_mx_from_skeleton, adj_mx_from_edges
 
 model = {} # model list 
 opt = opts().parse() # import args
 
 
 from data.load_data_hm36 import Fusion # data fusion to prepare data 
+from data.load_data_coco import COCO_Dataset
 ################modification#############
 if opt.pad > 0:
     exit(0) ## temporal info is not available
@@ -60,19 +64,24 @@ if opt.dataset == 'h36m':
     dataset_path = root_path + 'data_3d_' + opt.dataset + '.npz'
     from data.common.h36m_dataset import Human36mDataset
     dataset = Human36mDataset(dataset_path, opt)
-
-
+    adj = adj_mx_from_skeleton(dataset.skeleton())
+elif opt.dataset == 'coco':
+    joint_pairs = np.array([[1, 2], [3, 4], [5, 6], [7, 8],
+                        [9, 10], [11, 12], [13, 14], [15, 16]])
+    nodes_num = 17
+    adj = adj_mx_from_edges(nodes_num, joint_pairs, sparse=False)
 else:
     raise KeyError('Invalid dataset')
 
 
 actions = define_actions(opt.actions)
 device = torch.device("cuda" if torch.cuda.is_available() and opt.device == "cuda" else "cpu")
-
+# adj = torch.tensor(adj)
+# adj.to(device)
 
 ####### modificaiton for adj_matrix_and_dropout ################
 p_dropout = (None if opt.dropout == 0.0 else opt.dropout)
-adj = adj_mx_from_skeleton(dataset.skeleton())
+# adj = adj_mx_from_skeleton(dataset.skeleton())
 
 # load model
 
@@ -82,11 +91,17 @@ model['post_refine'] = post_refine(opt).to(device)
 
 
 if opt.pro_train:
-    train_data = Fusion(opt=opt, train=True, dataset=dataset, root_path=root_path)
+    if opt.dataset == 'coco':
+        train_data = COCO_Dataset(opt=opt, train=True, root_path=root_path)
+    else:
+        train_data = Fusion(opt=opt, train=True, dataset=dataset, root_path=root_path)
     train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=opt.batchSize,
                                                    shuffle=True, num_workers=int(opt.workers), pin_memory=False)
 if opt.pro_test:
-    test_data = Fusion(opt=opt, train=False,dataset=dataset, root_path =root_path)
+    if opt.dataset == 'coco':
+        test_data = COCO_Dataset(opt=opt, train=False, root_path=root_path)
+    else:
+        test_data = Fusion(opt=opt, train=False, dataset=dataset, root_path=root_path)
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=opt.batchSize,
                                                   shuffle=False, num_workers=int(opt.workers), pin_memory=False)
 
@@ -143,6 +158,8 @@ criterion['L1'] = nn.L1Loss(size_average=True).to(device)
 
 logger = Logger(os.path.join(opt.save_dir, 'log.txt'))
 logger.set_names(['epoch','learning rate', 'error_eval_p1', 'error_eval_p2'])
+#set tensorboard summary
+writer = SummaryWriter()
 #training process
 for epoch in range(1, opt.nepoch):
     print('======>>>>> Online epoch: #%d <<<<<======' % (epoch))
@@ -154,10 +171,18 @@ for epoch in range(1, opt.nepoch):
         print('frame_number: %d' %(opt.pad*2+1))
         print('processing file %s:' %opt.model_doc)
         print('learning rate %f' % (lr))
-        mean_error = train(opt, actions, train_dataloader, model, criterion, optimizer_all, lr)
+        if opt.dataset == 'h36m':
+            mean_error = train(opt, actions, train_dataloader, model, criterion, optimizer_all, lr)
+        elif opt.dataset == 'coco':
+            mean_error = train_coco(opt, train_dataloader, model, criterion, optimizer_all, lr)
+        else:
+            mean_error = train(opt, actions, train_dataloader, model, criterion, optimizer_all, lr)
+        train_error = mean_error['xyz']
         timer = time.time() - timer
         timer = timer / len(train_data)
+        print('==> time to learn 1 epoch = %f (s)' % (timer * len(train_data)))
         print('==> time to learn 1 sample = %f (ms)' % (timer * 1000))
+
 
     # switch to test
     if opt.pro_test == 1:
@@ -166,9 +191,14 @@ for epoch in range(1, opt.nepoch):
             print('======>>>>> test<<<<<======')
             print('frame_number: %d' %(opt.pad*2+1))
             print('processing file %s:' %opt.model_doc)
-            mean_error = val(opt, actions, test_dataloader, model, criterion, epoch, logger, lr)
+            if opt.dataset == "coco":
+                mean_error = val_coco(opt, test_dataloader, model, criterion, logger, lr)
+            else:
+                mean_error = val(opt, actions, test_dataloader, model, criterion, epoch, logger, lr)
+            test_error = mean_error['xyz']
             timer = time.time() - timer
             timer = timer / len(test_data)
+            print('==> time to learn 1 epoch = %f (s)' % (timer * len(test_data)))
             print('==> time to learn 1 sample = %f (ms)' % (timer * 1000))
 
             if opt.save_out_type == 'xyz':
@@ -176,7 +206,6 @@ for epoch in range(1, opt.nepoch):
 
             elif opt.save_out_type == 'post':
                 data_threshold = mean_error['post']
-
 
 
             if opt.save_model and data_threshold < opt.previous_best_threshold:
@@ -188,6 +217,11 @@ for epoch in range(1, opt.nepoch):
                 #print("data_threshold: ",data_threshold)
                 opt.previous_best_threshold = data_threshold
 
+    writer.add_scalars('loss',{
+        'train': train_error,
+        'val': test_error
+    }, epoch)
+    
     if opt.keypoints == 'gt':
         if epoch % opt.large_decay_epoch == 0: 
             for param_group in optimizer_all.param_groups:
@@ -202,7 +236,7 @@ for epoch in range(1, opt.nepoch):
             for param_group in optimizer_all.param_groups:
                 param_group['lr'] *= opt.lr_decay
                 lr *= opt.lr_decay
-
+writer.close()
 
 
 

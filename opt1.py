@@ -12,11 +12,12 @@ class opts():
         # ===============================================================
         #                     Dataset options
         # ===============================================================
-        self.parser.add_argument('--dataset', type=str, default='h36m', help='dataset')
+        self.parser.add_argument('--dataset', type=str, default='coco', help='dataset')
+        self.parser.add_argument('--annotations', type=str,default='/users/shuoyang67/data/coco/annotations/person_keypoints_train2017.json', help='path to annos')
         self.parser.add_argument('-k', '--keypoints', default='cpn_ft_h36m_dbb', type=str, metavar='NAME',
                             help='2D detections to use {gt||cpn_ft_h36m_dbb}')
         self.parser.add_argument('--data_augmentation', type=bool, default=True,help='disable train-time flipping')##
-        self.parser.add_argument('--test_augmentation', type=bool, default=True,help='flip and fuse the output result')
+        self.parser.add_argument('--test_augmentation', type=bool, default=False,help='flip and fuse the output result')
         #self.parser.add_argument('--data_augmentation', type=bool, default=False, help='disable train-time flipping')##
         #self.parser.add_argument('--test_augmentation', type=bool, default=False, help='flip and fuse the output result')
         
@@ -85,11 +86,11 @@ class opts():
         self.parser.add_argument('--post_refine_model', type=str, default='model_post_refine_2_eva_post_4704.pth',
                                  help='model name')
 
-        self.parser.add_argument('--n_joints', type=int, default=16, help='number of joints, 16 for human body 21 for hand pose')
+        self.parser.add_argument('--n_joints', type=int, default=17, help='number of joints, 16 for human body 21 for hand pose')
         self.parser.add_argument('--out_joints', type=int, default=16, help='number of joints, 16 for human body 21 for hand pose')
         self.parser.add_argument('--out_all', type=bool, default=True, help='output 1 frame or all frames')
         self.parser.add_argument('--in_channels', type=int, default=2, help='expected input channels here 2')
-        self.parser.add_argument('--out_channels', type=int, default=3, help='expected input channels here 2')
+        self.parser.add_argument('--out_channels', type=int, default=3, help='expected output channels here 3')
         self.parser.add_argument('-previous_best_threshold', type=float, default= math.inf,
                             help='threshold data:reg_RGB_3D/reg_3D_3D')
         self.parser.add_argument('-previous_rsnet_name', type=str, default='', help='save last saved model name')
@@ -137,3 +138,7 @@ class opts():
 
         print(self.opt)
         return self.opt
+
+
+if __name__ == '__main__':
+    opt = opts().parse() 
