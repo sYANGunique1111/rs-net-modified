@@ -191,8 +191,8 @@ def sym_penalty(dataset,keypoints,pred_out):
     elif dataset.startswith('STB'):
         loss_sym = 0
     elif dataset == 'coco':
-        left_bone = [(0,1),(1,3),(5,7),(5,9),(9,11),(11,13),(13,15)]
-        right_bone = [(0,2),(2,4),(6,8),(6,10),(10,12),(12,14),(14,16)]
+        left_bone = [(0,1),(1,3),(3,5),(5,7),(7,9),(5,11),(11,13),(13,15)]
+        right_bone = [(0,2),(2,4),(4,6),(6,8),(8,10),(6,12),(12,14),(14,16)]
         for (i_left,j_left),(i_right,j_right) in zip(left_bone,right_bone):
             left_part = pred_out[:,:,i_left]-pred_out[:,:,j_left]
             right_part = pred_out[:, :, i_right] - pred_out[:, :, j_right]
